@@ -1,0 +1,25 @@
+Machine Learning Study Notes — Unit 3: Model Evaluation
+
+Overfitting occurs when a model learns the training data too well, including its
+noise, and therefore performs poorly on unseen data. The standard remedy is to
+hold out a validation set and stop training when validation loss stops improving,
+a technique called early stopping.
+
+Cross-validation splits the dataset into k folds; the model trains on k-1 folds
+and validates on the remaining fold, rotating k times. Five or ten folds are the
+most common choices.
+
+Precision is the fraction of predicted positives that are truly positive.
+Recall is the fraction of actual positives the model successfully finds.
+The F1 score is the harmonic mean of precision and recall, used when classes
+are imbalanced and both error types matter.
+
+Regularization discourages overly complex models. L1 regularization (lasso) adds
+the absolute value of weights to the loss and can drive weights exactly to zero,
+performing feature selection. L2 regularization (ridge) adds squared weights and
+shrinks them smoothly toward zero without eliminating them.
+
+A confusion matrix tabulates predictions against true labels: true positives,
+false positives, true negatives, and false negatives. Accuracy is misleading on
+imbalanced data — a model predicting the majority class everywhere can score
+high accuracy while being useless.

@@ -1,0 +1,15 @@
+[project]
+name = "student-assistant-rag"
+version = "1.0.0"
+description = "Local agentic RAG: chat with your PDFs, fully offline via Ollama"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=1.0",
+    "langchain-ollama",
+    "langchain-chroma",
+    "langchain-text-splitters",
+    "langgraph",
+    "langgraph-checkpoint-sqlite",
+    "pypdf",
+    "streamlit",
+]
