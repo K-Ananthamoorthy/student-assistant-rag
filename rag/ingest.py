@@ -7,7 +7,7 @@ in production between an ingestion job and a serving path.
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
@@ -59,6 +59,26 @@ def ingest_pdfs(files) -> int:
     # 3. Embed + store. Chroma persists to disk automatically.
     get_vectorstore().add_documents(chunks)
     return len(chunks)
+
+
+def summarize_index() -> str:
+    """Brief overview of the indexed documents, shown once after analysis.
+
+    Samples the first few chunks rather than the whole corpus: enough for a
+    'what is this document about' summary without a long LLM call.
+    """
+    docs = get_vectorstore().get(limit=6)["documents"]
+    if not docs:
+        return ""
+    sample = "\n\n".join(docs)[:4000]
+    llm = ChatOllama(model=config.CHAT_MODEL, base_url=config.OLLAMA_URL, temperature=0)
+    return llm.invoke(
+        "Here are excerpts from documents a student just uploaded:\n\n"
+        f"{sample}\n\n"
+        "In 2-3 sentences, tell the student what these documents cover and "
+        "what kinds of questions they could ask about them. "
+        "Do not use the em dash character."
+    ).content
 
 
 def clear_index() -> None:
