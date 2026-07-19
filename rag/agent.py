@@ -4,9 +4,10 @@ The LLM is the reasoning engine: it DECIDES whether to retrieve, GRADES what
 came back, REWRITES the question when retrieval was poor (self-correction),
 and only then answers — grounded, with citations, behind a guardrail.
 
-    START -> route --(small talk)--> chitchat -> END
+    START -> route --(small talk)-----> chitchat -> END
+               |   --(corpus-level)---> overview -> END   (answers from paper cards)
                |
-               v (document question)
+               v (specific question)
              agent --(no tool call)--> END
                |
                v (tool call)
@@ -15,10 +16,15 @@ and only then answers — grounded, with citations, behind a guardrail.
                            v (irrelevant, < MAX_REWRITES)
                         rewrite -> agent   (loop)
 
-Router note: ideally the agent itself decides when NOT to retrieve, but
-llama3.2:3b calls the tool on every message once tools are bound (measured —
-prompting doesn't change it). So routing is an explicit node; with a larger
-model the router could be deleted and the agent's own discretion used.
+Routing notes:
+- Corpus-level questions ("summarize all my papers", "compare them") are a
+  known weakness of top-k retrieval: no k chunks represent the whole corpus.
+  They route to an overview node that answers from the per-paper cards built
+  at ingestion time instead of from retrieval.
+- Ideally the agent itself decides when NOT to retrieve, but llama3.2:3b
+  calls the tool on every message once tools are bound (measured; prompting
+  doesn't change it). So routing is an explicit few-shot classifier node;
+  with a larger model it could be deleted in favor of agent discretion.
 """
 
 import sqlite3
@@ -31,7 +37,7 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from rag import config, guards
-from rag.ingest import get_vectorstore
+from rag.ingest import get_vectorstore, list_papers
 
 
 class AgentState(MessagesState):
@@ -69,13 +75,50 @@ def build_agent():
     # --- nodes -------------------------------------------------------------
 
     def route(state: AgentState) -> str:
-        """Small talk vs document question — explicit routing (see module docstring)."""
-        is_chitchat = guards.yes_no(
+        """Three-way routing: small talk / corpus-level / specific question.
+
+        Few-shot examples are load-bearing: without them the 3B model sends
+        comparison and gap questions to SEARCH (tested at 6/8, 8/8 with them).
+        """
+        prompt = (
+            "A student is using a research assistant loaded with their project papers.\n"
+            "Classify their message:\n"
+            "- CHAT: greeting, thanks, or small talk\n"
+            "- OVERVIEW: asks about the paper collection as a whole: summaries of all "
+            "papers, comparisons between papers, gaps or open questions, what the "
+            "collection covers\n"
+            "- SEARCH: asks for specific information found inside the papers\n\n"
+            "Examples:\n"
+            '"hi there" -> CHAT\n'
+            '"Summarize my papers" -> OVERVIEW\n'
+            '"Compare the approaches in these papers" -> OVERVIEW\n'
+            '"What open problems remain across these papers?" -> OVERVIEW\n'
+            '"What dataset did the authors use?" -> SEARCH\n'
+            '"Define precision and recall" -> SEARCH\n\n'
             f'Message: "{_last_question(state)}"\n\n'
-            "Is this message small talk (a greeting, thanks, or casual chat) rather "
-            "than a question seeking information?\nReply with exactly one word: YES or NO."
+            "Reply with exactly one word: CHAT, OVERVIEW, or SEARCH."
         )
-        return "chitchat" if is_chitchat else "agent"
+        try:
+            verdict = _llm().invoke(prompt).content.strip().upper().rstrip(".")
+        except Exception:
+            verdict = "SEARCH"
+        return {"CHAT": "chitchat", "OVERVIEW": "overview"}.get(verdict, "agent")
+
+    def overview(state: AgentState):
+        """Corpus-level answers come from the paper cards, not top-k retrieval."""
+        papers = list_papers()
+        cards = "\n\n".join(
+            f"Paper: {c['title']}\nTopic: {c['topic']}\nMethod: {c['method']}\n"
+            + "\n".join(f"- {p}" for p in c["findings"])
+            for c in papers.values()
+        )
+        answer = _llm().invoke(
+            "A student asks about their collection of project papers. Answer from "
+            "the paper summaries below. Name papers by title. Do not invent papers. "
+            "Do not use the em dash character.\n\n"
+            f"Paper summaries:\n{cards}\n\nQuestion: {_last_question(state)}"
+        )
+        return {"messages": [answer]}
 
     def chitchat(state: AgentState):
         """Direct reply, no tools bound — the model can't wrongly retrieve here."""
@@ -83,8 +126,9 @@ def build_agent():
             [
                 {
                     "role": "system",
-                    "content": "You are a friendly study assistant for the user's uploaded "
-                    "PDFs. Reply briefly and warmly; invite them to ask about their documents.",
+                    "content": "You are a friendly research companion helping a student with "
+                    "their project papers. Reply briefly and warmly; invite them to ask about "
+                    "their papers. Do not use the em dash character.",
                 },
                 *state["messages"],
             ]
@@ -94,8 +138,8 @@ def build_agent():
     def agent(state: AgentState):
         """Reasoning step: answer directly, or emit a retrieve tool call."""
         system = (
-            "You are a study assistant for the user's uploaded PDFs. "
-            "For any question about document content, call the retrieve tool. "
+            "You are a research assistant for the user's uploaded project papers. "
+            "For any question about paper content, call the retrieve tool. "
             "Only answer directly for greetings or questions about the conversation itself."
         )
         response = llm_with_tools.invoke(
@@ -132,13 +176,18 @@ def build_agent():
         """Grounded answer with citations, checked by the grounding guard."""
         context = _last_tool_content(state)
         answer = _llm().invoke(
-            "Answer the question using ONLY the context below. "
+            "You are answering a research question from a student's project papers. "
+            "Answer using ONLY the context below. Synthesize across papers when "
+            "several are relevant, and note when sources disagree. "
             "Cite sources inline by copying the exact [source p.N] tags that "
-            "precede the passages you used — never invent a tag. "
-            "If the context doesn't contain the answer, say so.\n\n"
+            "precede the passages you used, never an invented tag. "
+            "If the context doesn't contain the answer, say so. "
+            "Do not use the em dash character.\n\n"
             f"Context:\n{context}\n\nQuestion: {_last_question(state)}"
         )
-        if not guards.is_grounded(answer.content, context):
+        if guards.is_grounded(answer.content, context):
+            answer.content = guards.fix_citations(answer.content, context)
+        else:
             answer.content = guards.REFUSAL
         return {"messages": [answer], "rewrites": 0}
 
@@ -146,13 +195,17 @@ def build_agent():
 
     g = StateGraph(AgentState)
     g.add_node("chitchat", chitchat)
+    g.add_node("overview", overview)
     g.add_node("agent", agent)
     g.add_node("retrieve", ToolNode([retrieve]))
     g.add_node("rewrite", rewrite)
     g.add_node("generate", generate)
 
-    g.add_conditional_edges(START, route, {"chitchat": "chitchat", "agent": "agent"})
+    g.add_conditional_edges(
+        START, route, {"chitchat": "chitchat", "overview": "overview", "agent": "agent"}
+    )
     g.add_edge("chitchat", END)
+    g.add_edge("overview", END)
     # tools_condition routes: tool call -> "retrieve", plain answer -> END
     g.add_conditional_edges("agent", tools_condition, {"tools": "retrieve", END: END})
     g.add_conditional_edges("retrieve", grade, {"generate": "generate", "rewrite": "rewrite"})

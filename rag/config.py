@@ -24,3 +24,4 @@ MAX_REWRITES = 2
 CHROMA_DIR = str(_ROOT / "chroma_db")
 COLLECTION = "pdfs"
 CHECKPOINT_DB = str(_ROOT / "memory.sqlite")
+PAPERS_FILE = str(_ROOT / "papers.json")
