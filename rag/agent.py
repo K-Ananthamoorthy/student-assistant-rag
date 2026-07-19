@@ -29,7 +29,7 @@ Routing notes:
 
 import sqlite3
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -81,20 +81,22 @@ def build_agent():
         comparison and gap questions to SEARCH (tested at 6/8, 8/8 with them).
         """
         prompt = (
-            "A student is using a research assistant loaded with their project papers.\n"
+            "A user is talking to an assistant loaded with their uploaded documents "
+            "(papers, notes, reports, books, personal files).\n"
             "Classify their message:\n"
             "- CHAT: greeting, thanks, or small talk\n"
-            "- OVERVIEW: asks about the paper collection as a whole: summaries of all "
-            "papers, comparisons between papers, gaps or open questions, what the "
-            "collection covers\n"
-            "- SEARCH: asks for specific information found inside the papers\n\n"
+            "- OVERVIEW: asks about the document collection as a whole: summaries of "
+            "everything, comparisons between documents, gaps or open questions, what "
+            "the collection covers\n"
+            "- SEARCH: asks for specific information found inside the documents\n\n"
             "Examples:\n"
             '"hi there" -> CHAT\n'
-            '"Summarize my papers" -> OVERVIEW\n'
+            '"Summarize my documents" -> OVERVIEW\n'
             '"Compare the approaches in these papers" -> OVERVIEW\n'
             '"What open problems remain across these papers?" -> OVERVIEW\n'
             '"What dataset did the authors use?" -> SEARCH\n'
-            '"Define precision and recall" -> SEARCH\n\n'
+            '"Define precision and recall" -> SEARCH\n'
+            '"Who won the football world cup?" -> SEARCH\n\n'
             f'Message: "{_last_question(state)}"\n\n'
             "Reply with exactly one word: CHAT, OVERVIEW, or SEARCH."
         )
@@ -105,18 +107,23 @@ def build_agent():
         return {"CHAT": "chitchat", "OVERVIEW": "overview"}.get(verdict, "agent")
 
     def overview(state: AgentState):
-        """Corpus-level answers come from the paper cards, not top-k retrieval."""
-        papers = list_papers()
+        """Corpus-level answers come from the paper cards, not top-k retrieval.
+
+        Prompt structure matters on a 3B model: with instruction-first wording
+        ("answer from the summaries below") the model claimed no summaries
+        existed even though they were in the prompt. Context first, question
+        last, fixed it (measured, not guessed).
+        """
         cards = "\n\n".join(
-            f"Paper: {c['title']}\nTopic: {c['topic']}\nMethod: {c['method']}\n"
-            + "\n".join(f"- {p}" for p in c["findings"])
-            for c in papers.values()
+            f"Document title: {c['title']}\nTopic: {c['topic']}\nType: {c['method']}\n"
+            "Key points:\n" + "\n".join(f"- {p}" for p in c["findings"])
+            for c in list_papers().values()
         )
         answer = _llm().invoke(
-            "A student asks about their collection of project papers. Answer from "
-            "the paper summaries below. Name papers by title. Do not invent papers. "
-            "Do not use the em dash character.\n\n"
-            f"Paper summaries:\n{cards}\n\nQuestion: {_last_question(state)}"
+            f"Here are summaries of the documents the user uploaded:\n\n{cards}\n\n"
+            "Using only the summaries above, answer the question. Name documents "
+            "by title. Do not use the em dash character.\n\n"
+            f"Question: {_last_question(state)}\nAnswer:"
         )
         return {"messages": [answer]}
 
@@ -126,9 +133,10 @@ def build_agent():
             [
                 {
                     "role": "system",
-                    "content": "You are a friendly research companion helping a student with "
-                    "their project papers. Reply briefly and warmly; invite them to ask about "
-                    "their papers. Do not use the em dash character.",
+                    "content": "You are a friendly companion for the user's uploaded "
+                    "documents: research papers, notes, reports, or personal files. "
+                    "Reply briefly and warmly; invite them to ask about their documents. "
+                    "Do not use the em dash character.",
                 },
                 *state["messages"],
             ]
@@ -138,8 +146,8 @@ def build_agent():
     def agent(state: AgentState):
         """Reasoning step: answer directly, or emit a retrieve tool call."""
         system = (
-            "You are a research assistant for the user's uploaded project papers. "
-            "For any question about paper content, call the retrieve tool. "
+            "You are an assistant for the user's uploaded documents. "
+            "For any question about document content, call the retrieve tool. "
             "Only answer directly for greetings or questions about the conversation itself."
         )
         response = llm_with_tools.invoke(
@@ -147,19 +155,24 @@ def build_agent():
         )
         return {"messages": [response]}
 
-    def grade(state: AgentState) -> str:
-        """Conditional edge: are the retrieved chunks actually relevant?"""
-        if state.get("rewrites", 0) >= config.MAX_REWRITES:
-            return "generate"  # stop looping; answer with what we have
-        # Plain-text YES/NO: reliable for a 3B model where JSON-forced
-        # verdicts are not (see rag/guards.py judge design note).
-        relevant = guards.yes_no(
+    def _related(state: AgentState) -> bool:
+        """Lenient relatedness check. Plain-text YES/NO: reliable for a 3B
+        model where JSON-forced verdicts are not (see rag/guards.py).
+        Lenient by design: a 3B grader produces false "irrelevant" verdicts,
+        and a wrong pass is caught by the guardrail after generation."""
+        return guards.yes_no(
             f"Question: {_last_question(state)}\n\n"
             f"Retrieved passages:\n{_last_tool_content(state)}\n\n"
-            "Do these passages contain information that can answer the question?\n"
+            "Are these passages related to the question's topic? "
+            "Reply NO only if they are completely unrelated.\n"
             "Reply with exactly one word: YES or NO."
         )
-        return "generate" if relevant else "rewrite"
+
+    def grade(state: AgentState) -> str:
+        """Conditional edge: rewrite the query on bad retrieval, else generate."""
+        if state.get("rewrites", 0) >= config.MAX_REWRITES:
+            return "generate"  # budget spent; generate does the final check
+        return "generate" if _related(state) else "rewrite"
 
     def rewrite(state: AgentState):
         """Self-correction: rephrase the question for better retrieval."""
@@ -173,22 +186,33 @@ def build_agent():
         }
 
     def generate(state: AgentState):
-        """Grounded answer with citations, checked by the grounding guard."""
+        """Grounded answer with citations, behind a graduated guardrail.
+
+        Refuse only when the grader rejected every retrieval attempt (the
+        rewrite budget is exhausted): that means the documents likely don't
+        cover the topic. Otherwise always answer; if the grounding judge is
+        unsure, ship the answer with a caution note instead of refusing,
+        because a 3B judge has too many false negatives for hard refusal.
+        """
+        # Refuse only if the rewrite budget is spent AND the final retrieval is
+        # still unrelated: the documents genuinely don't cover the topic.
+        if state.get("rewrites", 0) >= config.MAX_REWRITES and not _related(state):
+            return {"messages": [AIMessage(content=guards.REFUSAL)], "rewrites": 0}
+
         context = _last_tool_content(state)
         answer = _llm().invoke(
-            "You are answering a research question from a student's project papers. "
-            "Answer using ONLY the context below. Synthesize across papers when "
-            "several are relevant, and note when sources disagree. "
+            "You are answering a question from the user's uploaded documents. "
+            "Answer using ONLY the context below. Synthesize across documents "
+            "when several are relevant, and note when sources disagree. "
             "Cite sources inline by copying the exact [source p.N] tags that "
             "precede the passages you used, never an invented tag. "
             "If the context doesn't contain the answer, say so. "
             "Do not use the em dash character.\n\n"
             f"Context:\n{context}\n\nQuestion: {_last_question(state)}"
         )
-        if guards.is_grounded(answer.content, context):
-            answer.content = guards.fix_citations(answer.content, context)
-        else:
-            answer.content = guards.REFUSAL
+        answer.content = guards.fix_citations(answer.content, context)
+        if not guards.is_grounded(answer.content, context):
+            answer.content += guards.CAUTION
         return {"messages": [answer], "rewrites": 0}
 
     # --- graph -------------------------------------------------------------

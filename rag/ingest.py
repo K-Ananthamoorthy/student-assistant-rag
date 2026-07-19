@@ -45,7 +45,7 @@ def list_papers() -> dict:
     return json.loads(path.read_text()) if path.exists() else {}
 
 
-_CARD_PROMPT = """Here is the beginning of a document a student uploaded for a research project.
+_CARD_PROMPT = """Here is the beginning of a document the user uploaded (it may be a research paper, notes, a report, a book, or a personal document).
 Filename: {name}
 
 {text}
@@ -124,31 +124,6 @@ def ingest_pdfs(files, on_progress=None) -> list[dict]:
 
     Path(config.PAPERS_FILE).write_text(json.dumps(papers, indent=1))
     return new_cards
-
-
-_REVIEW_PROMPT = """You are helping a student draft a literature review for a project.
-Here are the papers they collected, with key points:
-
-{cards}
-
-Write a short literature review draft in markdown with these sections:
-## Overview (what this collection of papers covers, 2-3 sentences)
-## What each paper contributes (one bullet per paper, name it)
-## Open questions and gaps (2-3 bullets)
-Do not use the em dash character. Do not invent papers that are not listed."""
-
-
-def literature_review() -> str:
-    """One-call literature review draft over the paper cards."""
-    papers = list_papers()
-    if not papers:
-        return ""
-    cards = "\n\n".join(
-        f"Paper: {c['title']}\nTopic: {c['topic']}\nMethod: {c['method']}\n"
-        + "\n".join(f"- {p}" for p in c["findings"])
-        for c in papers.values()
-    )
-    return _llm().invoke(_REVIEW_PROMPT.format(cards=cards)).content
 
 
 def clear_index() -> None:

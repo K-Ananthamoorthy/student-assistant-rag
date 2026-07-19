@@ -18,8 +18,16 @@ from langchain_ollama import ChatOllama
 from rag import config
 
 REFUSAL = (
-    "I can't answer that from the uploaded documents. "
+    "I couldn't find anything about that in your documents. "
     "Try rephrasing, or upload a document that covers this topic."
+)
+
+# Graduated guardrail: a 3B judge has false negatives, so an unverified answer
+# ships with a caution instead of being replaced by a refusal. Refusal is
+# reserved for retrieval finding nothing relevant at all.
+CAUTION = (
+    "\n\n*Note: I could not fully verify every claim above against your "
+    "documents. Please double-check the cited pages.*"
 )
 
 _JUDGE_PROMPT = """Context:

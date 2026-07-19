@@ -18,8 +18,10 @@ CHUNK_OVERLAP = 200
 # top-k chunks retrieved per query
 RETRIEVAL_K = 4
 
-# how many times the agent may rewrite a question after bad retrieval
-MAX_REWRITES = 2
+# how many times the agent may rewrite a question after bad retrieval.
+# 1, not 2: with a 3B grader a false "irrelevant" verdict is common, and every
+# extra loop adds latency before an answer the guard can vet anyway.
+MAX_REWRITES = 1
 
 CHROMA_DIR = str(_ROOT / "chroma_db")
 COLLECTION = "pdfs"
