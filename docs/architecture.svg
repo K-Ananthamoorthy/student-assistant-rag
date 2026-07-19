@@ -1,0 +1,147 @@
+<svg viewBox="0 0 980 720" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b5cf6"/>
+    </marker>
+  </defs>
+
+  <!-- ======== INGESTION PANEL ======== -->
+  <rect x="16" y="16" width="290" height="560" rx="14" fill="#f0fdfa" stroke="#99f6e4"/>
+  <text x="161" y="46" text-anchor="middle" font-size="15" font-weight="700" fill="#0f766e">INGESTION · once per upload</text>
+
+  <rect x="46" y="66" width="230" height="46" rx="10" fill="#ffffff" stroke="#14b8a6" stroke-width="1.5"/>
+  <text x="161" y="94" text-anchor="middle" font-size="13" fill="#134e4a">📄 PDF upload (gate)</text>
+
+  <line x1="161" y1="112" x2="161" y2="134" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="46" y="136" width="230" height="46" rx="10" fill="#ffffff" stroke="#14b8a6" stroke-width="1.5"/>
+  <text x="161" y="157" text-anchor="middle" font-size="12.5" fill="#134e4a">pypdf · per-page text</text>
+  <text x="161" y="173" text-anchor="middle" font-size="11" fill="#64748b">metadata: source, page</text>
+
+  <line x1="161" y1="182" x2="161" y2="204" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="46" y="206" width="230" height="46" rx="10" fill="#ffffff" stroke="#14b8a6" stroke-width="1.5"/>
+  <text x="161" y="227" text-anchor="middle" font-size="12.5" fill="#134e4a">RecursiveCharacterTextSplitter</text>
+  <text x="161" y="243" text-anchor="middle" font-size="11" fill="#64748b">1000 chars · 200 overlap</text>
+
+  <line x1="161" y1="252" x2="161" y2="274" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="46" y="276" width="230" height="46" rx="10" fill="#ffffff" stroke="#14b8a6" stroke-width="1.5"/>
+  <text x="161" y="297" text-anchor="middle" font-size="12.5" fill="#134e4a">mxbai-embed-large</text>
+  <text x="161" y="313" text-anchor="middle" font-size="11" fill="#64748b">embeddings via Ollama</text>
+
+  <line x1="161" y1="322" x2="161" y2="344" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="46" y="346" width="230" height="46" rx="10" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="161" y="367" text-anchor="middle" font-size="12.5" font-weight="600" fill="#134e4a">Chroma vector store</text>
+  <text x="161" y="383" text-anchor="middle" font-size="11" fill="#0f766e">persistent · chroma_db/</text>
+
+  <line x1="161" y1="392" x2="161" y2="428" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="171" y="415" font-size="10.5" fill="#64748b">first 4 pages</text>
+
+  <rect x="46" y="430" width="230" height="58" rx="10" fill="#ffffff" stroke="#14b8a6" stroke-width="1.5"/>
+  <text x="161" y="451" text-anchor="middle" font-size="12.5" fill="#134e4a">Document card LLM</text>
+  <text x="161" y="467" text-anchor="middle" font-size="11" fill="#64748b">title · topic · type · findings</text>
+  <text x="161" y="481" text-anchor="middle" font-size="10.5" fill="#64748b">labeled lines, not JSON (3B-safe)</text>
+
+  <line x1="161" y1="488" x2="161" y2="510" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <rect x="46" y="512" width="230" height="42" rx="10" fill="#ccfbf1" stroke="#0d9488" stroke-width="1.5"/>
+  <text x="161" y="538" text-anchor="middle" font-size="12.5" font-weight="600" fill="#134e4a">papers.json · cards store</text>
+
+  <!-- ======== AGENT PANEL ======== -->
+  <rect x="326" y="16" width="638" height="560" rx="14" fill="#f5f3ff" stroke="#ddd6fe"/>
+  <text x="645" y="46" text-anchor="middle" font-size="15" font-weight="700" fill="#6d28d9">LANGGRAPH AGENT · every question</text>
+
+  <rect x="545" y="62" width="200" height="40" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="645" y="87" text-anchor="middle" font-size="13" fill="#4c1d95">💬 user question</text>
+
+  <line x1="645" y1="102" x2="645" y2="124" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+
+  <rect x="545" y="126" width="200" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="645" y="147" text-anchor="middle" font-size="13" font-weight="600" fill="#4c1d95">route</text>
+  <text x="645" y="164" text-anchor="middle" font-size="10.5" fill="#6d28d9">few-shot classifier · 8/8 testset</text>
+
+  <line x1="560" y1="178" x2="435" y2="216" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <text x="448" y="192" font-size="10.5" fill="#6d28d9">small talk</text>
+  <line x1="645" y1="178" x2="645" y2="216" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <text x="653" y="200" font-size="10.5" fill="#6d28d9">corpus-level</text>
+  <line x1="730" y1="178" x2="852" y2="216" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <text x="792" y="192" font-size="10.5" fill="#6d28d9">specific</text>
+
+  <rect x="356" y="218" width="160" height="52" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="436" y="239" text-anchor="middle" font-size="12.5" fill="#4c1d95">chitchat</text>
+  <text x="436" y="256" text-anchor="middle" font-size="10.5" fill="#6d28d9">no tools bound</text>
+
+  <rect x="565" y="218" width="160" height="52" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="645" y="239" text-anchor="middle" font-size="12.5" fill="#4c1d95">overview</text>
+  <text x="645" y="256" text-anchor="middle" font-size="10.5" fill="#6d28d9">answers from cards</text>
+
+  <rect x="774" y="218" width="160" height="52" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="854" y="239" text-anchor="middle" font-size="12.5" fill="#4c1d95">agent</text>
+  <text x="854" y="256" text-anchor="middle" font-size="10.5" fill="#6d28d9">llama3.2 + retrieve tool</text>
+
+  <!-- overview reads papers.json -->
+  <line x1="565" y1="252" x2="280" y2="530" stroke="#0d9488" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+  <line x1="854" y1="270" x2="854" y2="296" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <text x="862" y="288" font-size="10.5" fill="#6d28d9">tool call</text>
+
+  <rect x="774" y="298" width="160" height="52" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="854" y="319" text-anchor="middle" font-size="12.5" fill="#4c1d95">retrieve</text>
+  <text x="854" y="336" text-anchor="middle" font-size="10.5" fill="#6d28d9">Chroma top-k=4 + tags</text>
+
+  <!-- retrieve reads chroma -->
+  <line x1="774" y1="330" x2="280" y2="372" stroke="#0d9488" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+
+  <line x1="854" y1="350" x2="854" y2="376" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+
+  <rect x="774" y="378" width="160" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="854" y="399" text-anchor="middle" font-size="12.5" font-weight="600" fill="#4c1d95">grade</text>
+  <text x="854" y="416" text-anchor="middle" font-size="10.5" fill="#6d28d9">related? lenient YES/NO</text>
+
+  <!-- rewrite loop -->
+  <line x1="774" y1="410" x2="725" y2="410" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <rect x="565" y="384" width="160" height="52" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="645" y="405" text-anchor="middle" font-size="12.5" fill="#4c1d95">rewrite query</text>
+  <text x="645" y="422" text-anchor="middle" font-size="10.5" fill="#6d28d9">self-correction · max 1</text>
+  <path d="M 645 384 C 645 330, 730 300, 774 250" fill="none" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <text x="688" y="330" font-size="10.5" fill="#6d28d9">retry</text>
+  <text x="735" y="425" font-size="10.5" fill="#6d28d9">unrelated</text>
+
+  <line x1="854" y1="430" x2="854" y2="456" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <text x="862" y="448" font-size="10.5" fill="#6d28d9">related</text>
+
+  <rect x="774" y="458" width="160" height="52" rx="10" fill="#ffffff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="854" y="479" text-anchor="middle" font-size="12.5" fill="#4c1d95">generate</text>
+  <text x="854" y="496" text-anchor="middle" font-size="10.5" fill="#6d28d9">grounded · cited answer</text>
+
+  <line x1="774" y1="484" x2="608" y2="484" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+
+  <rect x="428" y="458" width="180" height="82" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="518" y="478" text-anchor="middle" font-size="12.5" font-weight="600" fill="#92400e">guardrails</text>
+  <text x="518" y="495" text-anchor="middle" font-size="10.5" fill="#b45309">citation guard (regex)</text>
+  <text x="518" y="510" text-anchor="middle" font-size="10.5" fill="#b45309">grounding judge (YES/NO)</text>
+  <text x="518" y="528" text-anchor="middle" font-size="10.5" font-weight="600" fill="#92400e">ok · caution · refuse</text>
+
+  <line x1="436" y1="270" x2="380" y2="548" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <line x1="645" y1="270" x2="378" y2="552" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+  <line x1="428" y1="520" x2="382" y2="548" stroke="#8b5cf6" stroke-width="1.5" marker-end="url(#arrp)"/>
+
+  <rect x="336" y="544" width="90" height="26" rx="13" fill="#7c3aed"/>
+  <text x="381" y="561" text-anchor="middle" font-size="12" font-weight="600" fill="#ffffff">answer</text>
+
+  <!-- ======== MEMORY / RUNTIME STRIPS ======== -->
+  <rect x="16" y="592" width="470" height="52" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="251" y="613" text-anchor="middle" font-size="12.5" font-weight="600" fill="#334155">🧠 persistent memory · SQLite checkpointer</text>
+  <text x="251" y="631" text-anchor="middle" font-size="11" fill="#64748b">every conversation thread survives app restarts (memory.sqlite)</text>
+
+  <rect x="494" y="592" width="470" height="52" rx="12" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="729" y="613" text-anchor="middle" font-size="12.5" font-weight="600" fill="#334155">🦙 Ollama local runtime · 100% offline</text>
+  <text x="729" y="631" text-anchor="middle" font-size="11" fill="#64748b">llama3.2:3b (reasoning + judging) · mxbai-embed-large (embeddings)</text>
+
+  <text x="490" y="678" text-anchor="middle" font-size="11.5" fill="#64748b">solid arrows: control flow · dashed arrows: data reads · no API keys, nothing leaves the machine</text>
+</svg>
