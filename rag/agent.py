@@ -1,11 +1,7 @@
-"""Agentic RAG as a LangGraph state machine.
-
-The LLM is the reasoning engine: it DECIDES whether to retrieve, GRADES what
-came back, REWRITES the question when retrieval was poor (self-correction),
-and only then answers — grounded, with citations, behind a guardrail.
+"""LangGraph agent for the RAG loop.
 
     START -> route --(small talk)-----> chitchat -> END
-               |   --(corpus-level)---> overview -> END   (answers from paper cards)
+               |   --(corpus-level)---> overview -> END
                |
                v (specific question)
              agent --(no tool call)--> END
@@ -14,17 +10,7 @@ and only then answers — grounded, with citations, behind a guardrail.
             retrieve --> grade --(relevant)--> generate -> guard -> END
                            |
                            v (irrelevant, < MAX_REWRITES)
-                        rewrite -> agent   (loop)
-
-Routing notes:
-- Corpus-level questions ("summarize all my papers", "compare them") are a
-  known weakness of top-k retrieval: no k chunks represent the whole corpus.
-  They route to an overview node that answers from the per-paper cards built
-  at ingestion time instead of from retrieval.
-- Ideally the agent itself decides when NOT to retrieve, but llama3.2:3b
-  calls the tool on every message once tools are bound (measured; prompting
-  doesn't change it). So routing is an explicit few-shot classifier node;
-  with a larger model it could be deleted in favor of agent discretion.
+                        rewrite -> agent
 """
 
 import sqlite3
@@ -75,11 +61,7 @@ def build_agent():
     # --- nodes -------------------------------------------------------------
 
     def route(state: AgentState) -> str:
-        """Three-way routing: small talk / corpus-level / specific question.
-
-        Few-shot examples are load-bearing: without them the 3B model sends
-        comparison and gap questions to SEARCH (tested at 6/8, 8/8 with them).
-        """
+        """Classify the message as CHAT, OVERVIEW, or SEARCH."""
         prompt = (
             "A user is talking to an assistant loaded with their uploaded documents "
             "(papers, notes, reports, books, personal files).\n"
@@ -107,13 +89,7 @@ def build_agent():
         return {"CHAT": "chitchat", "OVERVIEW": "overview"}.get(verdict, "agent")
 
     def overview(state: AgentState):
-        """Corpus-level answers come from the paper cards, not top-k retrieval.
-
-        Prompt structure matters on a 3B model: with instruction-first wording
-        ("answer from the summaries below") the model claimed no summaries
-        existed even though they were in the prompt. Context first, question
-        last, fixed it (measured, not guessed).
-        """
+        """Answer corpus-level questions from the document cards."""
         cards = "\n\n".join(
             f"Document title: {c['title']}\nTopic: {c['topic']}\nType: {c['method']}\n"
             "Key points:\n" + "\n".join(f"- {p}" for p in c["findings"])
@@ -128,7 +104,7 @@ def build_agent():
         return {"messages": [answer]}
 
     def chitchat(state: AgentState):
-        """Direct reply, no tools bound — the model can't wrongly retrieve here."""
+        """Direct reply with no retrieval tool bound."""
         response = _llm(temperature=0.4).invoke(
             [
                 {
@@ -144,7 +120,7 @@ def build_agent():
         return {"messages": [response]}
 
     def agent(state: AgentState):
-        """Reasoning step: answer directly, or emit a retrieve tool call."""
+        """Answer directly or emit a retrieve tool call."""
         system = (
             "You are an assistant for the user's uploaded documents. "
             "For any question about document content, call the retrieve tool. "
@@ -156,10 +132,7 @@ def build_agent():
         return {"messages": [response]}
 
     def _related(state: AgentState) -> bool:
-        """Lenient relatedness check. Plain-text YES/NO: reliable for a 3B
-        model where JSON-forced verdicts are not (see rag/guards.py).
-        Lenient by design: a 3B grader produces false "irrelevant" verdicts,
-        and a wrong pass is caught by the guardrail after generation."""
+        """Ask whether the retrieved passages are on-topic (lenient)."""
         return guards.yes_no(
             f"Question: {_last_question(state)}\n\n"
             f"Retrieved passages:\n{_last_tool_content(state)}\n\n"
@@ -169,13 +142,13 @@ def build_agent():
         )
 
     def grade(state: AgentState) -> str:
-        """Conditional edge: rewrite the query on bad retrieval, else generate."""
+        """Rewrite the query on bad retrieval, else generate."""
         if state.get("rewrites", 0) >= config.MAX_REWRITES:
-            return "generate"  # budget spent; generate does the final check
+            return "generate"
         return "generate" if _related(state) else "rewrite"
 
     def rewrite(state: AgentState):
-        """Self-correction: rephrase the question for better retrieval."""
+        """Rephrase the question for better retrieval."""
         better = _llm(temperature=0.4).invoke(
             "Rewrite this question to retrieve better search results from a "
             f"document index. Reply with ONLY the rewritten question.\n\n{_last_question(state)}"
@@ -186,16 +159,9 @@ def build_agent():
         }
 
     def generate(state: AgentState):
-        """Grounded answer with citations, behind a graduated guardrail.
-
-        Refuse only when the grader rejected every retrieval attempt (the
-        rewrite budget is exhausted): that means the documents likely don't
-        cover the topic. Otherwise always answer; if the grounding judge is
-        unsure, ship the answer with a caution note instead of refusing,
-        because a 3B judge has too many false negatives for hard refusal.
-        """
-        # Refuse only if the rewrite budget is spent AND the final retrieval is
-        # still unrelated: the documents genuinely don't cover the topic.
+        """Grounded, cited answer. Refuse if the rewrite budget is spent and
+        retrieval is still unrelated; otherwise answer, with a caution note
+        when the grounding judge is unsure."""
         if state.get("rewrites", 0) >= config.MAX_REWRITES and not _related(state):
             return {"messages": [AIMessage(content=guards.REFUSAL)], "rewrites": 0}
 
@@ -230,19 +196,17 @@ def build_agent():
     )
     g.add_edge("chitchat", END)
     g.add_edge("overview", END)
-    # tools_condition routes: tool call -> "retrieve", plain answer -> END
     g.add_conditional_edges("agent", tools_condition, {"tools": "retrieve", END: END})
     g.add_conditional_edges("retrieve", grade, {"generate": "generate", "rewrite": "rewrite"})
     g.add_edge("rewrite", "agent")
     g.add_edge("generate", END)
 
-    # SQLite checkpointer = conversation state persists across app restarts.
     conn = sqlite3.connect(config.CHECKPOINT_DB, check_same_thread=False)
     return g.compile(checkpointer=SqliteSaver(conn))
 
 
 def ask(graph, question: str, thread_id: str = "default") -> str:
-    """One turn of conversation on a persistent thread."""
+    """Run one turn on a persistent thread and return the reply."""
     result = graph.invoke(
         {"messages": [HumanMessage(content=question)]},
         config={"configurable": {"thread_id": thread_id}},

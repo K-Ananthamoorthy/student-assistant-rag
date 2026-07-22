@@ -1,15 +1,4 @@
-"""Safety guardrails: the answer must be supported by the retrieved context.
-
-RAG's whole value is grounding — if the model says something the documents
-don't support, we'd rather refuse than hallucinate.
-
-Judge design note: with a 3B local model, JSON-constrained structured output
-proved unreliable for verdicts (tested: it defaulted to false/unsupported
-regardless of input). A plain-text YES/NO answer is what the small model can
-do reliably, so that's what we use.
-# ponytail: 3B judge catches gross hallucination but misses subtle mixed
-# claims; swap CHAT_MODEL for an 8B+ judge when hardware allows.
-"""
+"""Grounding guardrails: check that an answer is supported by its context."""
 
 import re
 
@@ -22,9 +11,7 @@ REFUSAL = (
     "Try rephrasing, or upload a document that covers this topic."
 )
 
-# Graduated guardrail: a 3B judge has false negatives, so an unverified answer
-# ships with a caution instead of being replaced by a refusal. Refusal is
-# reserved for retrieval finding nothing relevant at all.
+# Appended to an answer the grounding judge could not verify.
 CAUTION = (
     "\n\n*Note: I could not fully verify every claim above against your "
     "documents. Please double-check the cited pages.*"
@@ -44,8 +31,7 @@ Reply with exactly one word: YES or NO."""
 
 
 def yes_no(prompt: str) -> bool:
-    """Ask the local model a YES/NO question; fail open on errors so a judge
-    outage never takes the app down."""
+    """Ask the model a YES/NO question. Fails open on error."""
     llm = ChatOllama(model=config.CHAT_MODEL, base_url=config.OLLAMA_URL, temperature=0)
     try:
         return llm.invoke(prompt).content.strip().upper().startswith("YES")
@@ -61,10 +47,8 @@ _TAG = re.compile(r"\[([^\[\]]+? p\.\d+)\]")
 
 
 def fix_citations(answer: str, context: str) -> str:
-    """Deterministic citation guard: the 3B model sometimes invents page
-    numbers (writes p.3 for a chunk tagged p.1). Every cited tag must exist
-    verbatim in the retrieved context; an invented tag is replaced with the
-    real tag of the same source file, or dropped if none matches."""
+    """Keep only [source p.N] tags present in the context. Remap an invented
+    tag to a real one from the same source, or drop it if none matches."""
     valid = set(_TAG.findall(context))
 
     def repair(match: re.Match) -> str:

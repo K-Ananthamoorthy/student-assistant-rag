@@ -35,6 +35,11 @@ The LLM here is not a single-shot pipeline. It is the reasoning engine of a **La
 - **Chroma over in-memory FAISS.** Persistent index with per-page metadata for citations, still zero-server. pgvector when the corpus needs concurrent writers.
 - **Everything local.** Models run via Ollama. [rag/config.py](rag/config.py) is the single place to swap models or tune parameters.
 
+## Limitations
+
+- The 3B grounding judge catches gross hallucination but can miss subtle, mixed claims. Point `CHAT_MODEL` at an 8B+ model for judging when hardware allows.
+- `pypdf` extracts plain text only, so scanned or image-based PDFs need OCR first.
+
 ## Run it
 
 ```bash

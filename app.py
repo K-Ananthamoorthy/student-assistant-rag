@@ -1,7 +1,7 @@
-"""Streamlit chat UI. Thin by design, all RAG/agent logic lives in rag/.
+"""Streamlit chat UI. All RAG/agent logic lives in rag/.
 
-Flow: upload gate -> Analyse -> document cards -> chat / literature review.
-The chat never appears until at least one document is indexed.
+Flow: upload gate -> Analyse -> document cards -> chat. The chat is hidden
+until at least one document is indexed.
 """
 
 import uuid
@@ -30,7 +30,7 @@ def analyse(files):
 
 
 def upload_gate():
-    """Fullscreen first step: nothing else exists until documents are analysed."""
+    """First screen. Blocks the rest of the app until a document is indexed."""
     st.title("🔬 Doc Companion")
     st.subheader("Chat with your PDFs. Fully local and private.")
     st.write(

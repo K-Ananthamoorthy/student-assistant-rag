@@ -1,14 +1,5 @@
-"""Ingestion pipeline: PDF -> per-page text -> chunks -> Chroma vector store,
-plus a structured "paper card" per document (title, topic, method, findings).
-
-Kept separate from the agent so indexing (slow, once per document set) and
-querying (fast, every question) are independent — the same split you'd make
-in production between an ingestion job and a serving path.
-
-Card extraction uses a labeled-lines format instead of JSON: with a 3B local
-model, line parsing is far more reliable than schema-constrained output
-(see the judge design note in rag/guards.py — same lesson).
-"""
+"""Ingestion: PDF -> per-page text -> chunks -> Chroma, plus a "paper card"
+(title, topic, method, findings) per document."""
 
 import json
 from pathlib import Path
@@ -31,7 +22,7 @@ def _llm() -> ChatOllama:
 
 
 def get_vectorstore() -> Chroma:
-    """Persistent Chroma collection — survives app restarts."""
+    """Persistent Chroma collection."""
     return Chroma(
         collection_name=config.COLLECTION,
         embedding_function=_embeddings(),
@@ -40,7 +31,7 @@ def get_vectorstore() -> Chroma:
 
 
 def list_papers() -> dict:
-    """Paper cards keyed by filename, persisted alongside the index."""
+    """Paper cards keyed by filename."""
     path = Path(config.PAPERS_FILE)
     return json.loads(path.read_text()) if path.exists() else {}
 
@@ -61,7 +52,7 @@ Do not use the em dash character."""
 
 
 def _paper_card(name: str, text: str) -> dict:
-    """One structured summary per paper, parsed from labeled lines."""
+    """Build one document card by parsing the model's labeled-line reply."""
     card = {"title": name, "topic": "", "method": "", "findings": []}
     try:
         reply = _llm().invoke(_CARD_PROMPT.format(name=name, text=text[:3500])).content
@@ -85,10 +76,10 @@ def _paper_card(name: str, text: str) -> dict:
 
 
 def ingest_pdfs(files, on_progress=None) -> list[dict]:
-    """Index uploaded PDFs and build a card per paper.
+    """Index uploaded PDFs and build a card per paper. Returns the new cards.
 
-    `files` are file-like objects with a .name. Returns the new cards.
-    `on_progress(message)` lets the UI narrate each stage.
+    `files` are file-like objects with a .name; `on_progress(message)` reports
+    each stage to the UI.
     """
     say = on_progress or (lambda msg: None)
     splitter = RecursiveCharacterTextSplitter(
@@ -127,7 +118,7 @@ def ingest_pdfs(files, on_progress=None) -> list[dict]:
 
 
 def clear_index() -> None:
-    """Drop every indexed chunk and all paper cards (start a new project)."""
+    """Drop every indexed chunk and all paper cards."""
     vs = get_vectorstore()
     ids = vs.get()["ids"]
     if ids:
